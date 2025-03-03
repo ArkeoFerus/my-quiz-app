@@ -1,12 +1,26 @@
 import streamlit as st
-import google.generativeai as genai
 from PyPDF2 import PdfReader
 
+# Check if google-generativeai is installed
+try:
+    import google.generativeai as genai
+except ImportError:
+    st.error("The 'google-generativeai' library is not installed. Please install it using: `pip install google-generativeai`")
+    st.stop()
+
 # Set up Gemini API
-genai.configure(api_key="AIzaSyC1meCPDpOcegRFfjK0egpdI9NRBsAjjrs")  # Replace with your Gemini API key
+try:
+    genai.configure(api_key="AIzaSyC1meCPDpOcegRFfjK0egpdI9NRBsAjjrs")  # Replace with your actual API key
+except Exception as e:
+    st.error(f"Failed to configure Gemini API: {e}")
+    st.stop()
 
 # Initialize Gemini model
-model = genai.GenerativeModel('gemini-pro')
+try:
+    model = genai.GenerativeModel('gemini-pro')
+except Exception as e:
+    st.error(f"Failed to initialize Gemini model: {e}")
+    st.stop()
 
 # Function to extract text from PDF
 def extract_text_from_pdf(pdf_file):
@@ -34,8 +48,12 @@ def generate_quiz(text, num_questions=5):
     
     Repeat for all questions.
     """
-    response = model.generate_content(prompt)
-    return response.text
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        st.error(f"Failed to generate quiz: {e}")
+        return None
 
 # Streamlit App
 st.title("Quiz Generator from PDF")
@@ -56,5 +74,6 @@ if uploaded_file is not None:
     if st.button("Generate Quiz"):
         st.write("Generating quiz...")
         quiz = generate_quiz(text, num_questions)
-        st.write("### Quiz:")
-        st.write(quiz)
+        if quiz:
+            st.write("### Quiz:")
+            st.write(quiz)
