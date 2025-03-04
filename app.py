@@ -1,79 +1,63 @@
 import streamlit as st
-from PyPDF2 import PdfReader
+import fitz  # PyMuPDF
+import google.generativeai as genai
+import json
 
-# Check if google-generativeai is installed
-try:
-    import google.generativeai as genai
-except ImportError:
-    st.error("The 'google-generativeai' library is not installed. Please install it using: `pip install google-generativeai`")
-    st.stop()
+# Configure Gemini API
+genai.configure(api_key="AIzaSyC1meCPDpOcegRFfjK0egpdI9NRBsAjjrs")
 
-# Set up Gemini API
-try:
-    genai.configure(api_key="AIzaSyC1meCPDpOcegRFfjK0egpdI9NRBsAjjrs")  # Replace with your actual API key
-except Exception as e:
-    st.error(f"Failed to configure Gemini API: {e}")
-    st.stop()
-
-# Initialize Gemini model
-try:
-    model = genai.GenerativeModel('gemini-pro')
-except Exception as e:
-    st.error(f"Failed to initialize Gemini model: {e}")
-    st.stop()
-
-# Function to extract text from PDF
 def extract_text_from_pdf(pdf_file):
-    reader = PdfReader(pdf_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
-    return text
+    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+    text = "\n".join(page.get_text("text") for page in doc)
+    return text[:2000]  # Limit text to first 2000 chars
 
-# Function to generate quiz using Gemini
-def generate_quiz(text, num_questions=5):
+def generate_quiz(text):
     prompt = f"""
-    Generate a quiz with {num_questions} multiple-choice questions based on the following text:
-    
+    Generate a short quiz (5 multiple-choice questions) from the following text:
     {text}
-    
-    Each question should have 4 options and a correct answer. Format the output as follows:
-    
-    Question 1: [Question text]
-    A) [Option 1]
-    B) [Option 2]
-    C) [Option 3]
-    D) [Option 4]
-    Correct Answer: [Correct option]
-    
-    Repeat for all questions.
+    Format: JSON with 'questions' (list of dicts with 'question', 'options', 'answer')
     """
+    model = genai.GenerativeModel("gemini-pro")
+    response = model.generate_content(prompt)
     try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        st.error(f"Failed to generate quiz: {e}")
+        return json.loads(response.text)
+    except:
         return None
 
-# Streamlit App
-st.title("Quiz Generator from PDF")
-st.write("Upload a PDF file, and we'll generate a quiz for you!")
+def main():
+    st.title("📚 AI-Powered PDF Quiz Generator")
+    uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+    
+    if uploaded_file:
+        text = extract_text_from_pdf(uploaded_file)
+        st.write("Extracted text preview:", text[:500] + "...")
+        
+        if st.button("Generate Quiz"):
+            quiz = generate_quiz(text)
+            if quiz:
+                st.session_state.quiz = quiz
+                st.session_state.score = 0
+                st.session_state.current_question = 0
+            else:
+                st.error("Failed to generate quiz. Try again.")
+    
+    if 'quiz' in st.session_state:
+        quiz = st.session_state.quiz
+        q_idx = st.session_state.current_question
+        
+        if q_idx < len(quiz['questions']):
+            q = quiz['questions'][q_idx]
+            st.subheader(f"Q{q_idx+1}: {q['question']}")
+            choice = st.radio("Select an answer:", q['options'], key=q_idx)
+            
+            if st.button("Submit Answer"):
+                if choice == q['answer']:
+                    st.session_state.score += 1
+                st.session_state.current_question += 1
+                st.experimental_rerun()
+        else:
+            st.success(f"Quiz Completed! Your Score: {st.session_state.score}/{len(quiz['questions'])}")
+            st.session_state.clear()
 
-# File upload
-uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
-
-if uploaded_file is not None:
-    # Extract text from PDF
-    text = extract_text_from_pdf(uploaded_file)
-    st.write("Text extracted from PDF successfully!")
-
-    # Number of questions
-    num_questions = st.slider("Number of questions", min_value=1, max_value=10, value=5)
-
-    # Generate quiz
-    if st.button("Generate Quiz"):
-        st.write("Generating quiz...")
-        quiz = generate_quiz(text, num_questions)
-        if quiz:
-            st.write("### Quiz:")
-            st.write(quiz)
+if __name__ == "__main__":
+    main()
